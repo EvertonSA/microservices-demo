@@ -18,7 +18,7 @@
 # - 1. building/pushing images
 # - 2. injecting tags into YAML manifests
 # - 3. creating a new git tag
-# - 4. pushing the tag/commit to master.
+# - 4. pushing the tag/commit to main.
 
 set -euo pipefail
 SCRIPTDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -34,18 +34,34 @@ if [[ "$TAG" != v* ]]; then
     fail "\$TAG must start with 'v', e.g. v0.1.0 (got: $TAG)"
 fi
 
+# ensure there are no uncommitted changes
+if [[ $(git status -s | wc -l) -gt 0 ]]; then
+    echo "error: can't have uncommitted changes"
+    exit 1
+fi
+
+# make sure local source is up to date
+git checkout main
+git pull
+
 # build and push images
 "${SCRIPTDIR}"/make-docker-images.sh
 
 # update yaml
 "${SCRIPTDIR}"/make-release-artifacts.sh
 
-# create git release / push to master
+# build and push images
+"${SCRIPTDIR}"/make-helm-chart.sh
+
+# create git release / push to new branch
+git checkout -b "release/${TAG}"
 git add "${SCRIPTDIR}/../release/"
+git add "${SCRIPTDIR}/../kustomize/base/"
+git add "${SCRIPTDIR}/../helm-chart/"
 git commit --allow-empty -m "Release $TAG"
-log "Pushing k8s manifests to master..."
+log "Pushing k8s manifests to release/${TAG}..."
 git tag "$TAG"
+git push --set-upstream origin "release/${TAG}"
 git push --tags
-git push origin master
 
 log "Successfully tagged release $TAG."
